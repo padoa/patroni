@@ -1026,8 +1026,10 @@ class Ha(object):
         """
         endpoint = 'failsafe'
         url = member.get_endpoint_url(endpoint)
+        timeout = parse_int(global_config.get('failsafe_timeout')) or 2
+        retries = parse_int(global_config.get('failsafe_retries')) or 1
         try:
-            response = self.patroni.request(member, 'post', endpoint, data, timeout=2, retries=1)
+            response = self.patroni.request(member, 'post', endpoint, data, timeout=timeout, retries=retries)
             response_data = response.data.decode('utf-8')
             logger.info('Got response from %s %s: %s', member.name, url, response_data)
             accepted = response.status == 200 and response_data == 'Accepted'
