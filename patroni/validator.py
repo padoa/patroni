@@ -1024,6 +1024,7 @@ schema = Schema({
             Optional("retry_timeout"): IntValidator(min=3, raise_assert=True),
             Optional("failsafe_timeout"): IntValidator(min=1, raise_assert=True),
             Optional("failsafe_retries"): IntValidator(min=1, raise_assert=True),
+            Optional("kubernetes_api_server_retries"): IntValidator(min=0, raise_assert=True),
             Optional("maximum_lag_on_failover"): IntValidator(min=0, raise_assert=True),
             Optional("maximum_lag_on_syncnode"): IntValidator(min=-1, raise_assert=True),
             Optional("postgresql"): {
