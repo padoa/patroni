@@ -243,6 +243,7 @@ class K8sClient(object):
             self._api_servers_cache_updated = 0
             self.set_api_servers_cache_ttl(10)
             self.set_read_timeout(10)
+            self.set_api_server_retries(0)
             try:
                 self._load_api_servers_cache()
             except K8sException:
@@ -250,6 +251,9 @@ class K8sClient(object):
 
         def set_read_timeout(self, timeout: Union[int, float]) -> None:
             self._read_timeout = timeout
+
+        def set_api_server_retries(self, retries: int) -> None:
+            self._api_server_retries = retries
 
         def set_api_servers_cache_ttl(self, ttl: int) -> None:
             self._api_servers_cache_ttl = ttl - 0.5
@@ -342,11 +346,18 @@ class K8sClient(object):
             """Calculate a request timeout and number of retries per single K8s API server node.
             In case if the timeout per node is too small (less than one second) we will reduce the number of nodes.
             For the cluster with only one API server node we will try to do 1 retry.
-            No retries for clusters with 2 or more API server nodes. We better rely on switching to a different node."""
+            No retries for clusters with 2 or more API server nodes. We better rely on switching to a different node.
+
+            If ``_api_server_retries`` is set (> 0), it overrides the default retry count.
+            This is useful when a single API endpoint is a load balancer with multiple replicas:
+            more retries increase the chance of reaching a healthy replica."""
 
             per_node_timeout = timeout = float(timeout or self._read_timeout)
 
-            max_retries = 3 - min(api_servers, 2)
+            if self._api_server_retries > 0:
+                max_retries = self._api_server_retries + 1
+            else:
+                max_retries = 3 - min(api_servers, 2)
             per_node_retries = 1
             min_timeout = 1.0
 
@@ -526,7 +537,8 @@ class CoreV1ApiProxy(object):
         self._use_endpoints = bool(use_endpoints)
         self._retriable_http_codes = set(self._DEFAULT_RETRIABLE_HTTP_CODES)
 
-    def configure_timeouts(self, loop_wait: int, retry_timeout: Union[int, float], ttl: int) -> None:
+    def configure_timeouts(self, loop_wait: int, retry_timeout: Union[int, float], ttl: int,
+                           api_server_retries: int = 0) -> None:
         # Normally every loop_wait seconds we should have receive something from the socket.
         # If we didn't received anything after the loop_wait + retry_timeout it is a time
         # to start worrying (send keepalive messages). Finally, the connection should be
@@ -535,6 +547,7 @@ class CoreV1ApiProxy(object):
             list(keepalive_socket_options(ttl, int(loop_wait + retry_timeout)))
         self._api_client.set_read_timeout(retry_timeout)
         self._api_client.set_api_servers_cache_ttl(loop_wait)
+        self._api_client.set_api_server_retries(api_server_retries)
 
     def configure_retriable_http_codes(self, retriable_http_codes: List[int]) -> None:
         self._retriable_http_codes = self._DEFAULT_RETRIABLE_HTTP_CODES | set(retriable_http_codes)
@@ -831,7 +844,8 @@ class Kubernetes(AbstractDCS):
         super(Kubernetes, self).reload_config(config)
         if TYPE_CHECKING:  # pragma: no cover
             assert self._retry.deadline is not None
-        self._api.configure_timeouts(self.loop_wait, self._retry.deadline, self.ttl)
+        self._api.configure_timeouts(self.loop_wait, self._retry.deadline, self.ttl,
+                                     int(config.get('kubernetes_api_server_retries') or 0))
 
         # retriable_http_codes supposed to be either int, list of integers or comma-separated string with integers.
         retriable_http_codes: Union[str, List[Union[str, int]]] = config.get('retriable_http_codes', [])

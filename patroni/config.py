@@ -88,6 +88,7 @@ class Config(object):
     __DEFAULT_CONFIG: Dict[str, Any] = {
         'ttl': 30, 'loop_wait': 10, 'retry_timeout': 10,
         'failsafe_timeout': 2, 'failsafe_retries': 1,
+        'kubernetes_api_server_retries': 0,
         'standby_cluster': {
             'create_replica_methods': '',
             'host': '',
