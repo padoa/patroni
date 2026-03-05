@@ -181,6 +181,39 @@ class TestApiClient(unittest.TestCase):
         mock_request.side_effect = [socket.timeout, socket.timeout, self.mock_get_ep]
         self.assertRaises(K8sConnectionFailed, retry, self.a.call_api, 'GET', 'f', _retry=retry)
 
+    def test__calculate_timeouts_default(self, mock_request):
+        """With api_server_retries=0 (default), original formula applies:
+           1 API server → max_retries=2 → 1 retry (2 total attempts)
+           2 API servers → max_retries=1 → 0 retries per node"""
+        self.a.set_api_server_retries(0)
+        self.a.set_read_timeout(10)
+        # 1 server, timeout=10: per_node_retries grows to 2, returned as 1
+        nodes, timeout, retries = self.a._calculate_timeouts(1)
+        self.assertEqual((nodes, retries), (1, 1))
+        self.assertAlmostEqual(timeout, 5.0)
+        # 2 servers, timeout=10: per_node_retries stays at 1, returned as 0
+        nodes, timeout, retries = self.a._calculate_timeouts(2)
+        self.assertEqual((nodes, retries), (2, 0))
+        self.assertAlmostEqual(timeout, 5.0)
+
+    def test__calculate_timeouts_with_api_server_retries(self, mock_request):
+        """With api_server_retries>0, it overrides the retry count.
+           This is the SRE-8211 fix: more retries when API endpoint is a load balancer."""
+        self.a.set_read_timeout(10)
+        # Override: 3 retries for 1 server → 4 total attempts, 2.5s each
+        self.a.set_api_server_retries(3)
+        nodes, timeout, retries = self.a._calculate_timeouts(1)
+        self.assertEqual((nodes, retries), (1, 3))
+        self.assertAlmostEqual(timeout, 2.5)
+        # Very high override is capped by min_timeout (1s):
+        # timeout=10, min 1s per attempt → max 10 attempts → 9 retries
+        self.a.set_api_server_retries(20)
+        nodes, timeout, retries = self.a._calculate_timeouts(1)
+        self.assertEqual((nodes, retries), (1, 9))
+        self.assertAlmostEqual(timeout, 1.0)
+        # Reset to default
+        self.a.set_api_server_retries(0)
+
     def test__refresh_api_servers_cache(self, mock_request):
         mock_request.side_effect = k8s_client.rest.ApiException(403, '')
         self.a.refresh_api_servers_cache()
@@ -373,6 +406,12 @@ class TestKubernetesConfigMaps(BaseTestKubernetes):
         self.assertEqual(self.k._api._retriable_http_codes, self.k._api._DEFAULT_RETRIABLE_HTTP_CODES | set([405, 406]))
         self.k.reload_config({'loop_wait': 10, 'ttl': 30, 'retry_timeout': 10, 'retriable_http_codes': True})
         mock_warning.assert_called_once()
+        # SRE-8211: kubernetes_api_server_retries flows through to the API client
+        self.k.reload_config({'loop_wait': 10, 'ttl': 30, 'retry_timeout': 10, 'kubernetes_api_server_retries': 3})
+        self.assertEqual(self.k._api._api_client._api_server_retries, 3)
+        # Omitting the parameter defaults to 0 (feature flag OFF)
+        self.k.reload_config({'loop_wait': 10, 'ttl': 30, 'retry_timeout': 10})
+        self.assertEqual(self.k._api._api_client._api_server_retries, 0)
 
 
 @patch('urllib3.PoolManager.request', Mock())
