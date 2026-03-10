@@ -1860,6 +1860,9 @@ class Ha(object):
 
                 return 'PostgreSQL is still starting up, {0:.0f} seconds until timeout'.format(time_left)
         else:
+            if self.state_handler.bootstrapping:
+                logger.info("Still starting up after bootstrap, waiting for PostgreSQL to accept connections.")
+                return 'waiting for PostgreSQL to accept connections after bootstrap'
             # Use normal processing for standbys
             logger.info("Still starting up as a standby.")
             return None
