@@ -6,6 +6,9 @@ on:
   release:
     types:
       - published
+
+permissions: {}
+
 jobs:
   build-n-publish:
     name: Build and publish Patroni distributions to PyPI and TestPyPI
