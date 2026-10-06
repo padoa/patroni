@@ -7,9 +7,8 @@ on:
     - master
     - 'REL_[0-9]+_[0-9]+'
 
-env:
-  CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-  SECRETS_AVAILABLE: ${{ secrets.CODACY_PROJECT_TOKEN != '' }}
+permissions:
+  contents: read
 
 jobs:
   unit:
@@ -95,6 +94,8 @@ jobs:
   behave:
     runs-on: ${{ matrix.os }}-latest
     env:
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+      SECRETS_AVAILABLE: ${{ secrets.CODACY_PROJECT_TOKEN != '' }}
       DCS: ${{ matrix.dcs }}
       ETCDVERSION: 3.4.23
       PGVERSION: 16.1-1  # for windows and macos
@@ -167,6 +168,9 @@ jobs:
     name: Finalize Codacy
     needs: behave
     runs-on: ubuntu-latest
+    env:
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+      SECRETS_AVAILABLE: ${{ secrets.CODACY_PROJECT_TOKEN != '' }}
     steps:
     - run: bash <(curl -Ls https://coverage.codacy.com/get.sh) final
       if: ${{ env.SECRETS_AVAILABLE == 'true' }}
